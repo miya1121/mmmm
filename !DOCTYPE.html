@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>家計簿ビューア</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#42a5f5">
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    input, select { margin: 10px 0; padding: 8px; font-size: 16px; width: 100%; }
+    canvas { margin-top: 30px; max-width: 100%; }
+  </style>
+</head>
+<body>
+
+  <h2>📊 家計簿ビューア（PWA対応）</h2>
+
+  <input type="file" accept=".csv" id="csvInput"><br>
+
+  <label for="categorySelect">📌 費目を選択：</label>
+  <select id="categorySelect" onchange="drawChart()">
+    <option value="">-- 費目を選択 --</option>
+  </select>
+
+  <canvas id="chart" width="600" height="300"></canvas>
+
+  <script>
+    let csvData = [];
+    let categories = new Set();
+
+    document.getElementById("csvInput").addEventListener("change", function (e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const text = e.target.result;
+        parseCSV(text);
+      };
+      reader.readAsText(file, "UTF-8");
+    });
+
+    function parseCSV(data) {
+      csvData = [];
+      categories.clear();
+
+      const rows = data.split(/\r?\n/).filter(row => row.trim() !== "");
+      rows.forEach((row, i) => {
+        const cols = row.split(",");
+        if (cols.length < 8 || i === 0) return;
+
+        const year = cols[1];
+        const month = cols[2];
+        const category = cols[4];
+        const amount = parseFloat(cols[7]);
+
+        if (!year || !month || !category || isNaN(amount)) return;
+
+        const ym = `${year}-${month.padStart(2, "0")}`;
+
+        csvData.push({ ym, category, amount });
+        categories.add(category);
+      });
+
+      updateCategorySelect();
+    }
+
+    function updateCategorySelect() {
+      const select = document.getElementById("categorySelect");
+      select.innerHTML = '<option value="">-- 費目を選択 --</option>';
+      [...categories].sort().forEach(cat => {
+        const option = document.createElement("option");
+        option.value = cat;
+        option.textContent = cat;
+        select.appendChild(option);
+      });
+    }
+
+    function drawChart() {
+      const selectedCategory = document.getElementById("categorySelect").value;
+      if (!selectedCategory) return;
+
+      const filtered = csvData.filter(d => d.category === selectedCategory);
+
+      const monthlyTotal = {};
+      filtered.forEach(item => {
+        if (!monthlyTotal[item.ym]) monthlyTotal[item.ym] = 0;
+        monthlyTotal[item.ym] += item.amount;
+      });
+
+      const sortedMonths = Object.keys(monthlyTotal).sort();
+      const amounts = sortedMonths.map(m => monthlyTotal[m]);
+
+      const ctx = document.getElementById("chart").getContext("2d");
+      if (window.myChart) window.myChart.destroy();
+
+      window.myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: sortedMonths,
+          datasets: [{
+            label: `${selectedCategory} の月別支出`,
+            data: amounts,
+            borderColor: '#42a5f5',
+            backgroundColor: 'rgba(66, 165, 245, 0.2)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: `${selectedCategory} の支出推移グラフ`
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: '金額（円）'
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: '年月'
+              }
+            }
+          }
+        }
+      });
+    }
+  </script>
+
+</body>
+</html>
